@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+    http://www.springframework.org/schema/beans/spring-beans.xsd"
+       default-lazy-init="true">
+
+    <description>Shiro安全配置</description>
+
+
+    <!-- Shiro 的Web过滤器 -->
+    <bean id="shiroFilter" class="org.apache.shiro.spring.web.ShiroFilterFactoryBean">
+        <!-- 安全管理器 -->
+        <property name="securityManager" ref="securityManager"/>
+        <!-- 默认的登陆访问url -->
+        <property name="loginUrl" value="/login"/>
+        <!-- 登陆成功后跳转的url -->
+        <property name="successUrl" value="/index"/>
+        <!-- 没有权限跳转的url -->
+        <property name="unauthorizedUrl" value="/unauth"/>
+        <!-- 过虑器链定义，从上向下顺序执行，一般将/**放在最下边 -->
+        <property name="filterChainDefinitions">
+            <value>
+                <!--
+                    anon  不需要认证
+                    authc 需要认证
+                    user  验证通过或RememberMe登录的都可以
+                -->
+                /captcha.jpg = anon
+                /commons/** = anon
+                /static/** = anon
+                /login = anon
+                /** = user
+            </value>
+        </property>
+        <!--  <property name="filters">
+              <map>
+                  <entry key="user" value-ref="ajaxSessionFilter" />
+              </map>
+          </property>-->
+    </bean>
+
+    <!-- 安全管理器 -->
+    <bean id="securityManager" class="org.apache.shiro.web.mgt.DefaultWebSecurityManager">
+        <property name="realm" ref="customRealm"/>
+        <!-- 会话Cookie模板 -->
+        <property name="sessionManager" ref="sessionManager"/>
+        <!--将缓存管理器将用户信息，权限信息-->
+        <property name="cacheManager" ref="shiroSpringCacheManager"/>
+        <!--记住密码-->
+        <property name="rememberMeManager" ref="rememberMeManager"/>
+    </bean>
+
+
+    <!-- 会话管理器 -->
+    <bean id="sessionManager" class="org.apache.shiro.web.session.mgt.DefaultWebSessionManager">
+        <!-- 会话Cookie模板 -->
+        <property name="sessionIdCookie" ref="sessionIdCookie"/>
+        <!-- 设置全局会话超时时间 半小时 -->
+        <property name="globalSessionTimeout" value="#{30 * 60 * 1000}"/>
+       <!-- <property name="globalSessionTimeout" value="${session.global.timeout}"/>-->
+
+        <!--session会话管理-->
+        <property name="sessionDAO" ref="sessionDAO"/>
+        <!--自定义session-->
+        <property name="sessionFactory" ref="sessionFactory"/>
+    </bean>
+
+    <!-- 会话DAO 用于会话的CRUD -->
+    <bean id="sessionDAO" class="com.gjb.pro.shiro.sessionDao.CustomShiroSessionDAO">
+        <!--Session缓存名字，默认就是shiro-activeSessionCache-->
+        <property name="activeSessionsCacheName" value="activeSessionCache"/>
+        <property name="cacheManager" ref="shiroSpringCacheManager"/>
+        <!--会话session生成器-->
+        <property name="sessionIdGenerator" ref="sessionIdGenerator"/>
+    </bean>
+
+    <!-- 会话Session ID生成器 -->
+    <bean id="sessionIdGenerator" class="org.apache.shiro.session.mgt.eis.JavaUuidSessionIdGenerator"/>
+
+    <!-- 会话Cookie模板 -->
+    <bean id="sessionIdCookie" class="org.apache.shiro.web.servlet.SimpleCookie">
+        <!--cookie的name，我故意取名叫xxxxbaidu -->
+        <constructor-arg value="SHARESESSION"/>
+        <property name="httpOnly" value="true"/>
+        <!--cookie的有效时间 -->
+        <property name="maxAge" value="-1"/>
+        <!-- 配置存储Session Cookie的domain为 一级域名
+        <property name="domain" value=".itboy.net"/>
+         -->
+    </bean>
+
+    <!-- 自定义 realm -->
+    <bean id="customRealm" class="com.gjb.pro.shiro.realm.ShiroRealm">
+        <constructor-arg index="0" ref="shiroSpringCacheManager"/>
+        <constructor-arg index="1" ref="credentialsMatcher"/>
+        <!-- 启用身份验证缓存，即缓存AuthenticationInfo信息，默认false -->
+        <property name="authenticationCachingEnabled" value="true"/>
+        <!-- 缓存AuthenticationInfo信息的缓存名称 -->
+        <property name="authenticationCacheName" value="authenticationCache"/>
+        <!-- 缓存AuthorizationInfo信息的缓存名称 -->
+        <property name="authorizationCachingEnabled" value="true"/>
+        <property name="authorizationCacheName" value="authorizationCache"/>
+
+    </bean>
+
+    <!-- 保证实现了Shiro内部lifecycle函数的bean执行 -->
+    <bean id="lifecycleBeanPostProcessor" class="org.apache.shiro.spring.LifecycleBeanPostProcessor"/>
+
+    <!--验证码 默认存储3分钟-->
+    <bean id="dreamCaptcha" class="com.gjb.pro.shiro.captcha.DreamCaptcha">
+        <property name="cacheManager" ref="shiroSpringCacheManager"/>
+        <!--默认capatcha 3分钟也可注入-->
+        <!--<property name="cacheName" value="halfHour"/>-->
+    </bean>
+
+    <!-- 用户授权信息Cache, 采用spring-cache, 具体请查看spring-ehcache.xml、spring-redis.xml -->
+    <bean id="shiroSpringCacheManager" class="com.gjb.pro.shiro.cache.ShiroSpringCacheManager">
+        <property name="cacheManager" ref="cacheManager"/>
+    </bean>
+
+    <!-- shiro密码加密配置 -->
+    <bean id="passwordHash" class="com.gjb.pro.shiro.PasswordHash">
+        <!-- 密码加密 1次md5,增强密码可修改此处 -->
+        <property name="algorithmName" value="md5"/>
+        <!--加密次数-->
+        <property name="hashIterations" value="1"/>
+    </bean>
+
+    <!-- 凭证匹配器 -->
+    <bean id="credentialsMatcher" class="com.gjb.pro.shiro.RetryLimitHashedCredentialsMatcher">
+        <constructor-arg ref="shiroSpringCacheManager"/>
+        <!--加密方式-->
+        <property name="hashAlgorithmName" value="md5"/>
+        <!--默认retryLimitCache  缓存时间10分钟-->
+        <!--<property name="retryLimitCache" value="halfHour"/>-->
+
+        <property name="passwordHash" ref="passwordHash"/>
+    </bean>
+
+    <!-- rememberMe管理器,cipherKey生成见{@code Base64Test.java} -->
+    <bean id="rememberMeManager" class="org.apache.shiro.web.mgt.CookieRememberMeManager">
+        <property name="cipherKey" value="#{T(org.apache.shiro.codec.Base64).decode('5aaC5qKm5oqA5pyvAAAAAA==')}"/>
+        <property name="cookie" ref="rememberMeCookie"/>
+    </bean>
+
+    <!-- 记住密码Cookie -->
+    <bean id="rememberMeCookie" class="org.apache.shiro.web.servlet.SimpleCookie">
+        <constructor-arg value="rememberMe"/>
+        <property name="httpOnly" value="true"/>
+        <!-- 7天,采用spring el计算方便修改[细节决定成败]！ -->
+        <property name="maxAge" value="#{7 * 24 * 60 * 60}"/>
+    </bean>
+
+    <!-- 自定义Session工厂方法 返回会标识是否修改主要字段的自定义Session-->
+    <bean id="sessionFactory" class="com.gjb.pro.shiro.session.sessionFactory"/>
+
+</beans>
